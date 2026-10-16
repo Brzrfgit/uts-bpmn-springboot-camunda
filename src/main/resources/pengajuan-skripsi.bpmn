@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  id="Definitions_Skripsi"
+                  targetNamespace="http://bpmn.io/schema/bpmn"
+                  exporter="Camunda Modeler"
+                  exporterVersion="5.22.0">
+
+  <bpmn:process id="pengajuan-skripsi-process" name="Sistem Pengajuan Proposal Skripsi" isExecutable="true" camunda:historyTimeToLive="180">
+
+    <!-- 1. START EVENT DENGAN FORM INPUT MAHASISWA -->
+    <bpmn:startEvent id="StartEvent_Mahasiswa" name="Mahasiswa Mengajukan Judul">
+      <bpmn:extensionElements>
+        <camunda:formData>
+          <camunda:formField id="nim" label="NIM Mahasiswa" type="string" defaultValue="12409011030043" />
+          <camunda:formField id="namaMahasiswa" label="Nama Lengkap Mahasiswa" type="string" defaultValue="Mahasiswa TI UIN Jakarta" />
+          <camunda:formField id="judulProposal" label="Judul Proposal Skripsi" type="string" defaultValue="Penerapan BPMN dan Camunda Engine pada Alur Kerja Akademik" />
+          <camunda:formField id="dosenPembimbing" label="Dosen Pembimbing" type="string" defaultValue="Rizal Broer Bahaweres, M.Kom" />
+        </camunda:formData>
+      </bpmn:extensionElements>
+      <bpmn:outgoing>Flow_Ke_ReviewDosen</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- 2. USER TASK: REVIEW OLEH DOSEN PEMBIMBING -->
+    <bpmn:userTask id="UserTask_ReviewDosen" name="Review Proposal oleh Dosen Pembimbing">
+      <bpmn:extensionElements>
+        <camunda:formData>
+          <camunda:formField id="nim" label="NIM Mahasiswa" type="string">
+            <camunda:validation>
+              <camunda:constraint name="readonly" />
+            </camunda:validation>
+          </camunda:formField>
+          <camunda:formField id="namaMahasiswa" label="Nama Mahasiswa" type="string">
+            <camunda:validation>
+              <camunda:constraint name="readonly" />
+            </camunda:validation>
+          </camunda:formField>
+          <camunda:formField id="judulProposal" label="Judul Proposal Skripsi" type="string">
+            <camunda:validation>
+              <camunda:constraint name="readonly" />
+            </camunda:validation>
+          </camunda:formField>
+          <camunda:formField id="disetujui" label="Apakah Proposal Ini Disetujui?" type="boolean" defaultValue="true" />
+          <camunda:formField id="catatanDosen" label="Catatan / Masukan dari Dosen" type="string" defaultValue="Judul sangat relevan dengan kebutuhan sistem informasi saat ini." />
+        </camunda:formData>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Ke_ReviewDosen</bpmn:incoming>
+      <bpmn:outgoing>Flow_Ke_Gateway</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- 3. EXCLUSIVE GATEWAY (XOR): KEPUTUSAN DOSEN -->
+    <bpmn:exclusiveGateway id="Gateway_Keputusan" name="Apakah Disetujui?">
+      <bpmn:incoming>Flow_Ke_Gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_Disetujui</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Ditolak</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- 4A. SERVICE TASK: KODE JAVA KETIKA DISETUJUI -->
+    <bpmn:serviceTask id="ServiceTask_Disetujui" name="Terbitkan SK &amp; Notifikasi Diterima" camunda:delegateExpression="${proposalDisetujuiDelegate}">
+      <bpmn:incoming>Flow_Disetujui</bpmn:incoming>
+      <bpmn:outgoing>Flow_Ke_EndSetuju</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- 4B. SERVICE TASK: KODE JAVA KETIKA DITOLAK / REVISI -->
+    <bpmn:serviceTask id="ServiceTask_Ditolak" name="Kirim Notifikasi Revisi ke Mahasiswa" camunda:delegateExpression="${proposalDitolakDelegate}">
+      <bpmn:incoming>Flow_Ditolak</bpmn:incoming>
+      <bpmn:outgoing>Flow_Ke_EndTolak</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- 5A. END EVENT: DITERIMA -->
+    <bpmn:endEvent id="EndEvent_Disetujui" name="Proposal Diterima (Lanjut Bimbingan)">
+      <bpmn:incoming>Flow_Ke_EndSetuju</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- 5B. END EVENT: REVISI -->
+    <bpmn:endEvent id="EndEvent_Ditolak" name="Proposal Ditolak / Perlu Revisi">
+      <bpmn:incoming>Flow_Ke_EndTolak</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- KONEKSI ALUR (SEQUENCE FLOWS) -->
+    <bpmn:sequenceFlow id="Flow_Ke_ReviewDosen" sourceRef="StartEvent_Mahasiswa" targetRef="UserTask_ReviewDosen" />
+    <bpmn:sequenceFlow id="Flow_Ke_Gateway" sourceRef="UserTask_ReviewDosen" targetRef="Gateway_Keputusan" />
+    
+    <!-- Jalur 1: Disetujui (disetujui == true) -->
+    <bpmn:sequenceFlow id="Flow_Disetujui" name="Ya (Disetujui)" sourceRef="Gateway_Keputusan" targetRef="ServiceTask_Disetujui">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${disetujui == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <!-- Jalur 2: Ditolak (disetujui == false) -->
+    <bpmn:sequenceFlow id="Flow_Ditolak" name="Tidak (Revisi)" sourceRef="Gateway_Keputusan" targetRef="ServiceTask_Ditolak">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${disetujui == false}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="Flow_Ke_EndSetuju" sourceRef="ServiceTask_Disetujui" targetRef="EndEvent_Disetujui" />
+    <bpmn:sequenceFlow id="Flow_Ke_EndTolak" sourceRef="ServiceTask_Ditolak" targetRef="EndEvent_Ditolak" />
+
+  </bpmn:process>
+
+  <!-- VISUALISASI DIAGRAM BPMN (COORDINATES / LAYOUT) -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Skripsi">
+    <bpmndi:BPMNPlane id="BPMNPlane_Skripsi" bpmnElement="pengajuan-skripsi-process">
+      
+      <bpmndi:BPMNShape id="StartEvent_Mahasiswa_di" bpmnElement="StartEvent_Mahasiswa">
+        <dc:Bounds x="160" y="162" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="141" y="205" width="76" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="UserTask_ReviewDosen_di" bpmnElement="UserTask_ReviewDosen">
+        <dc:Bounds x="260" y="140" width="120" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Gateway_Keputusan_di" bpmnElement="Gateway_Keputusan" isMarkerVisible="true">
+        <dc:Bounds x="445" y="155" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="426" y="131" width="88" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="ServiceTask_Disetujui_di" bpmnElement="ServiceTask_Disetujui">
+        <dc:Bounds x="560" y="80" width="130" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="ServiceTask_Ditolak_di" bpmnElement="ServiceTask_Ditolak">
+        <dc:Bounds x="560" y="220" width="130" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="EndEvent_Disetujui_di" bpmnElement="EndEvent_Disetujui">
+        <dc:Bounds x="762" y="102" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="739" y="145" width="84" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="EndEvent_Ditolak_di" bpmnElement="EndEvent_Ditolak">
+        <dc:Bounds x="762" y="242" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="740" y="285" width="82" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="Flow_Ke_ReviewDosen_di" bpmnElement="Flow_Ke_ReviewDosen">
+        <di:waypoint x="196" y="180" />
+        <di:waypoint x="260" y="180" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Ke_Gateway_di" bpmnElement="Flow_Ke_Gateway">
+        <di:waypoint x="380" y="180" />
+        <di:waypoint x="445" y="180" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Disetujui_di" bpmnElement="Flow_Disetujui">
+        <di:waypoint x="470" y="155" />
+        <di:waypoint x="470" y="120" />
+        <di:waypoint x="560" y="120" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="475" y="103" width="67" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Ditolak_di" bpmnElement="Flow_Ditolak">
+        <di:waypoint x="470" y="205" />
+        <di:waypoint x="470" y="260" />
+        <di:waypoint x="560" y="260" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="474" y="263" width="68" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Ke_EndSetuju_di" bpmnElement="Flow_Ke_EndSetuju">
+        <di:waypoint x="690" y="120" />
+        <di:waypoint x="762" y="120" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Ke_EndTolak_di" bpmnElement="Flow_Ke_EndTolak">
+        <di:waypoint x="690" y="260" />
+        <di:waypoint x="762" y="260" />
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>
